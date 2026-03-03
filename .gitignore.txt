@@ -1,0 +1,4 @@
+FireBase/
+*.json
+.env
+node_modules/

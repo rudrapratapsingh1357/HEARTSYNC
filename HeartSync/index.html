@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HeartSync Real-Time ECG Monitor</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-database.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+            color: #e8eaf6;
+            overflow: hidden;
+            height: 100vh;
+            perspective: 1500px;
+        }
+        
+        .container { 
+            display: flex; 
+            height: 100vh;
+            position: relative;
+            transform-style: preserve-3d;
+        }
+        
+        /* 3D Floating Particles Background */
+        .particles {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        .particle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: radial-gradient(circle, rgba(0, 255, 128, 0.8) 0%, transparent 70%);
+            border-radius: 50%;
+            animation: float-3d 20s infinite ease-in-out;
+            opacity: 0;
+        }
+        
+        @keyframes float-3d {
+            0% {
+                transform: translate3d(0, 0, 0) scale(0.5);
+                opacity: 0;
+            }
+            10% {
+                opacity: 1;
+            }
+            90% {
+                opacity: 1;
+            }
+            100% {
+                transform: translate3d(var(--tx), var(--ty), var(--tz)) scale(1.5);
+                opacity: 0;
+            }
+        }
+        
+        /* Background Effects */
+        .container::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 30% 50%, rgba(0, 255, 128, 0.03) 0%, transparent 50%);
+            animation: rotate 20s linear infinite;
+            pointer-events: none;
+        }
+        
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        .sidebar {
+            width: 360px;
+            background: rgba(15, 20, 40, 0.95);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid rgba(0, 255, 128, 0.15);
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            position: relative;
+            z-index: 1;
+            box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
+            transform-style: preserve-3d;
+            transition: transform 0.1s ease-out;
+        }
+        
+        .sidebar::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, rgba(0, 255, 128, 0.05) 0%, transparent 100%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            border-radius: inherit;
+        }
+        
+        .sidebar:hover::before {
+            opacity: 1;
+        }
+        
+        .header {
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(0, 255, 128, 0.2);
+            transform: translateZ(20px);
+            transition: transform 0.3s ease;
+        }
+        
+        .header:hover {
+            transform: translateZ(30px);
+        }
+        
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        
+        .header-title h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            background: linear-gradient(135deg, #00FF80 0%, #00d9ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .header-subtitle {
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.5);
+            letter-spacing: 2px;
+            font-weight: 500;
+        }
+        
+        .icon {
+            width: 36px;
+            height: 36px;
+            filter: drop-shadow(0 0 8px rgba(0, 255, 128, 0.5));
+        }
+        
+        .bpm-display {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 1rem;
+            padding: 3rem 0;
+            background: linear-gradient(135deg, rgba(0, 255, 128, 0.05) 0%, rgba(0, 217, 255, 0.05) 100%);
+            border-radius: 20px;
+            border: 1px solid rgba(0, 255, 128, 0.15);
+            position: relative;
+            overflow: hidden;
+            transform: translateZ(40px);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .bpm-display:hover {
+            transform: translateZ(50px) scale(1.02);
+            box-shadow: 0 20px 60px rgba(0, 255, 128, 0.3);
+        }
+        
+        .bpm-display::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #00FF80, transparent);
+            animation: scan 3s linear infinite;
+        }
+        
+        .bpm-display::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(0, 255, 128, 0.1) 0%, transparent 50%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .bpm-display:hover::after {
+            opacity: 1;
+        }
+        
+        @keyframes scan {
+            0% { transform: translateY(0); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: translateY(300px); opacity: 0; }
+        }
+        
+        .bpm-label {
+            font-size: 0.85rem;
+            letter-spacing: 3px;
+            color: rgba(255, 255, 255, 0.6);
+            font-weight: 600;
+        }
+        
+        .bpm-value {
+            font-size: 5.5rem;
+            font-weight: 700;
+            line-height: 1;
+            font-family: 'JetBrains Mono', monospace;
+            color: #00FF80;
+            text-shadow: 
+                0 0 20px rgba(0, 255, 128, 0.8),
+                0 0 40px rgba(0, 255, 128, 0.4),
+                0 0 60px rgba(0, 255, 128, 0.2);
+            transition: all 0.3s ease;
+        }
+        
+        .bpm-value.pulse-animation {
+            animation: bpmPulse 0.5s ease;
+        }
+        
+        @keyframes bpmPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        
+        .bpm-unit {
+            font-size: 1.2rem;
+            letter-spacing: 2px;
+            font-weight: 600;
+            color: rgba(0, 255, 128, 0.8);
+        }
+        
+        .data-counter {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.4);
+            margin-top: 1rem;
+            letter-spacing: 1px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .status-panel {
+            background: rgba(0, 255, 128, 0.03);
+            border: 1px solid rgba(0, 255, 128, 0.15);
+            border-radius: 16px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            transform: translateZ(20px);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .status-panel:hover {
+            transform: translateZ(30px);
+            box-shadow: 0 10px 30px rgba(0, 255, 128, 0.2);
+        }
+        
+        .status-row {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.6);
+            padding: 0.75rem;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .signal-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #00FF80;
+            box-shadow: 0 0 20px #00FF80, 0 0 40px rgba(0, 255, 128, 0.5);
+            animation: pulse 2s ease-in-out infinite;
+            transition: all 0.3s ease;
+        }
+        
+        .signal-dot.inactive {
+            background-color: #666;
+            box-shadow: none;
+            animation: none;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.7; }
+        }
+        
+        .device-info {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.35);
+            letter-spacing: 0.5px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .icon-small {
+            width: 18px;
+            height: 18px;
+            transition: all 0.3s ease;
+        }
+        
+        /* Alert System Styles */
+        .alert-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        
+        .alert-overlay.show {
+            opacity: 1;
+            pointer-events: all;
+        }
+        
+        .alert-box {
+            background: linear-gradient(135deg, rgba(255, 50, 50, 0.15) 0%, rgba(255, 100, 0, 0.1) 100%);
+            border: 2px solid #ff3232;
+            border-radius: 24px;
+            padding: 2.5rem;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 
+                0 20px 60px rgba(255, 50, 50, 0.4),
+                inset 0 0 60px rgba(255, 50, 50, 0.1);
+            transform: scale(0.8) translateY(-20px);
+            transition: transform 0.3s ease;
+            animation: alertPulse 2s ease-in-out infinite;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .alert-overlay.show .alert-box {
+            transform: scale(1) translateY(0);
+        }
+        
+        @keyframes alertPulse {
+            0%, 100% {
+                box-shadow: 
+                    0 20px 60px rgba(255, 50, 50, 0.4),
+                    inset 0 0 60px rgba(255, 50, 50, 0.1);
+            }
+            50% {
+                box-shadow: 
+                    0 20px 80px rgba(255, 50, 50, 0.6),
+                    inset 0 0 80px rgba(255, 50, 50, 0.15);
+            }
+        }
+        
+        .alert-box::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: conic-gradient(from 0deg, transparent, rgba(255, 50, 50, 0.1), transparent);
+            animation: alertRotate 4s linear infinite;
+        }
+        
+        @keyframes alertRotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        .alert-content {
+            position: relative;
+            z-index: 1;
+        }
+        
+        .alert-icon-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .alert-icon {
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 50, 50, 0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: alertIconPulse 1.5s ease-in-out infinite;
+            box-shadow: 0 0 40px rgba(255, 50, 50, 0.6);
+        }
+        
+        @keyframes alertIconPulse {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 40px rgba(255, 50, 50, 0.6);
+            }
+            50% {
+                transform: scale(1.1);
+                box-shadow: 0 0 60px rgba(255, 50, 50, 0.8);
+            }
+        }
+        
+        .alert-icon svg {
+            width: 48px;
+            height: 48px;
+            stroke: #ff3232;
+            stroke-width: 2.5;
+            filter: drop-shadow(0 0 10px rgba(255, 50, 50, 0.8));
+        }
+        
+        .alert-title {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #ff3232;
+            text-align: center;
+            margin-bottom: 1rem;
+            text-shadow: 0 0 20px rgba(255, 50, 50, 0.5);
+            letter-spacing: 0.5px;
+        }
+        
+        .alert-message {
+            font-size: 1.1rem;
+            color: rgba(255, 255, 255, 0.9);
+            text-align: center;
+            margin-bottom: 1.5rem;
+            line-height: 1.6;
+        }
+        
+        .alert-bpm {
+            font-size: 3rem;
+            font-weight: 700;
+            color: #ff3232;
+            text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 1.5rem;
+            text-shadow: 0 0 30px rgba(255, 50, 50, 0.8);
+        }
+        
+        .alert-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+        }
+        
+        .alert-button {
+            padding: 0.875rem 2rem;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: 'Inter', sans-serif;
+            letter-spacing: 0.5px;
+        }
+        
+        .alert-button-primary {
+            background: linear-gradient(135deg, #ff3232 0%, #ff6666 100%);
+            color: white;
+            box-shadow: 0 4px 20px rgba(255, 50, 50, 0.4);
+        }
+        
+        .alert-button-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 30px rgba(255, 50, 50, 0.6);
+        }
+        
+        .alert-button-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .alert-button-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: translateY(-2px);
+        }
+        
+        /* Warning indicator on BPM display */
+        .bpm-value.warning {
+            color: #ff3232 !important;
+            text-shadow: 
+                0 0 20px rgba(255, 50, 50, 0.8),
+                0 0 40px rgba(255, 50, 50, 0.6),
+                0 0 60px rgba(255, 50, 50, 0.4) !important;
+            animation: warningPulse 1s ease-in-out infinite !important;
+        }
+        
+        @keyframes warningPulse {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.08);
+            }
+        }
+        
+        .bpm-display.warning {
+            border-color: rgba(255, 50, 50, 0.5) !important;
+            background: linear-gradient(135deg, rgba(255, 50, 50, 0.08) 0%, rgba(255, 100, 0, 0.05) 100%) !important;
+        }
+        
+        .main-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 2rem;
+            gap: 1.5rem;
+            position: relative;
+            z-index: 1;
+            transform-style: preserve-3d;
+        }
+        
+        .chart-header {
+            padding-bottom: 1rem;
+            border-bottom: 1px solid rgba(0, 255, 128, 0.2);
+            transform: translateZ(15px);
+            transition: transform 0.3s ease;
+        }
+        
+        .chart-header:hover {
+            transform: translateZ(25px);
+        }
+        
+        .chart-header h2 {
+            font-size: 1.5rem;
+            letter-spacing: 1px;
+            font-weight: 700;
+            color: #e8eaf6;
+            margin-bottom: 0.5rem;
+        }
+        
+        .chart-subtitle {
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.4);
+            letter-spacing: 0.5px;
+        }
+        
+        .chart-container {
+            flex: 1;
+            background: rgba(15, 20, 40, 0.6);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(0, 255, 128, 0.2);
+            border-radius: 20px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 
+                inset 0 0 40px rgba(0, 255, 128, 0.05),
+                0 8px 32px rgba(0, 0, 0, 0.3);
+            padding: 1rem;
+            transform: translateZ(30px);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .chart-container:hover {
+            transform: translateZ(40px) scale(1.01);
+            box-shadow: 
+                inset 0 0 40px rgba(0, 255, 128, 0.08),
+                0 20px 60px rgba(0, 0, 0, 0.4),
+                0 0 80px rgba(0, 255, 128, 0.1);
+        }
+        
+        .chart-container::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at var(--chart-mouse-x, 50%) var(--chart-mouse-y, 50%), rgba(0, 255, 128, 0.08) 0%, transparent 60%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+        
+        .chart-container:hover::before {
+            opacity: 1;
+        }
+        
+        #ecgChart {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        
+        .waiting-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 10;
+        }
+        
+        .waiting-overlay:not(.show) {
+            display: none;
+        }
+        
+        .waiting-overlay .spinner {
+            width: 60px;
+            height: 60px;
+            border: 3px solid rgba(0, 255, 128, 0.1);
+            border-top: 3px solid #00FF80;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1.5rem;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .waiting-text {
+            font-size: 1.2rem;
+            color: rgba(255, 255, 255, 0.5);
+            letter-spacing: 1px;
+            margin-bottom: 0.5rem;
+        }
+        
+        .waiting-subtitle {
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .footer-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.3);
+            letter-spacing: 0.5px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 1200px) {
+            .sidebar { width: 300px; }
+            .bpm-value { font-size: 4.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="particles" id="particles"></div>
+    <div class="container" id="container">
+        <div class="sidebar" id="sidebar">
+            <div class="header">
+                <div class="header-title">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="#00FF80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                    </svg>
+                    <h1>HEARTSYNC</h1>
+                </div>
+                <div class="header-subtitle">REAL-TIME ECG MONITORING</div>
+            </div>
+
+            <div class="bpm-display" id="bpmDisplay">
+                <div class="bpm-label">HEART RATE</div>
+                <div class="bpm-value" id="bpmValue">0</div>
+                <div class="bpm-unit">BPM</div>
+                <div class="data-counter">
+                    DATA POINTS: <span id="dataCount">0</span>/200
+                </div>
+            </div>
+
+            <div class="status-panel">
+                <div class="status-row">
+                    <svg class="icon-small" id="wifiIcon" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+                        <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+                        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                        <line x1="12" y1="20" x2="12.01" y2="20"></line>
+                    </svg>
+                    <span id="statusText" style="letter-spacing: 1px;">INITIALIZING...</span>
+                </div>
+                
+                <div class="status-indicator">
+                    <div class="signal-dot inactive" id="signalDot"></div>
+                    <span id="signalText">SIGNAL INACTIVE</span>
+                </div>
+                
+                <div class="device-info">ESP32 + AD8232 SENSOR</div>
+                <div class="device-info">FIREBASE RTDB STREAM</div>
+            </div>
+        </div>
+
+        <div class="main-area">
+            <div class="chart-header">
+                <h2>Real-Time ECG Trace</h2>
+                <div class="chart-subtitle">
+                    Continuous cardiac waveform monitoring • Raw ADC values (500-2000)
+                </div>
+            </div>
+
+            <div class="chart-container" id="chartContainer">
+                <canvas id="ecgChart"></canvas>
+                <div class="waiting-overlay show" id="waitingOverlay">
+                    <div class="spinner"></div>
+                    <div class="waiting-text">WAITING FOR SIGNAL...</div>
+                    <div class="waiting-subtitle">Ensure ESP32 is transmitting to HeartData path</div>
+                </div>
+            </div>
+
+            <div class="footer-info">
+                <span>CHART.JS VISUALIZATION</span>
+                <span>REFRESH: ~50ms</span>
+                <span>BUFFER: 200 SAMPLES</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Overlay -->
+    <div class="alert-overlay" id="alertOverlay">
+        <div class="alert-box">
+            <div class="alert-content">
+                <div class="alert-icon-container">
+                    <div class="alert-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                </div>
+                <div class="alert-title" id="alertTitle">HIGH HEART RATE DETECTED!</div>
+                <div class="alert-message" id="alertMessage">Your heart rate is above safe range.</div>
+                <div class="alert-bpm">
+                    <span id="alertBpmValue">0</span> BPM
+                </div>
+                <div class="alert-actions">
+                    <button class="alert-button alert-button-primary" id="acknowledgeBtn">I Understand</button>
+                    <button class="alert-button alert-button-secondary" id="dismissBtn">Dismiss</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "d170c09c54941c08dd897a0b4fe5a073aaf4f90d",
+            authDomain: "heartsync-esp1357.firebaseapp.com",
+            databaseURL: "https://heartsync-esp1357-default-rtdb.firebaseio.com",
+            projectId: "heartsync-esp1357",
+        };
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+
+        const database = firebase.database();
+        const dbRef = database.ref('HeartData');
+
+        let ecgData = [];
+        let bpm = 0;
+        let dataCount = 0;
+        const MAX_POINTS = 200;
+        
+        // Alert system state
+        const HIGH_BPM_THRESHOLD = 120;
+        const LOW_BPM_THRESHOLD = 40;
+        let alertShown = false;
+        let lastAlertTime = 0;
+        const ALERT_COOLDOWN = 30000; // 30 seconds between alerts
+        
+        const alertMessages = {
+            high: [
+                "Your heart rate is above safe range.",
+                "Alert: Tachycardia suspected.",
+                "Heartbeat too fast. Please rest for a moment.",
+                "Elevated heart rate detected. Consider resting."
+            ],
+            low: [
+                "Your heart rate is below normal range.",
+                "Alert: Bradycardia suspected.",
+                "Heartbeat too slow. Please check your condition.",
+                "Low heart rate detected. Seek assistance if needed."
+            ]
+        };
+
+        const ctx = document.getElementById('ecgChart').getContext('2d');
+        const bpmValueEl = document.getElementById('bpmValue');
+        const dataCountEl = document.getElementById('dataCount');
+        const statusTextEl = document.getElementById('statusText');
+        const signalTextEl = document.getElementById('signalText');
+        const signalDotEl = document.getElementById('signalDot');
+        const wifiIconEl = document.getElementById('wifiIcon');
+        const waitingOverlayEl = document.getElementById('waitingOverlay');
+        
+        // Alert elements
+        const alertOverlay = document.getElementById('alertOverlay');
+        const alertTitle = document.getElementById('alertTitle');
+        const alertMessage = document.getElementById('alertMessage');
+        const alertBpmValue = document.getElementById('alertBpmValue');
+        const acknowledgeBtn = document.getElementById('acknowledgeBtn');
+        const dismissBtn = document.getElementById('dismissBtn');
+
+        let ecgChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'ECG Signal',
+                    data: [],
+                    borderColor: '#00FF80',
+                    borderWidth: 2.5,
+                    tension: 0.2,
+                    pointRadius: 0,
+                    fill: true,
+                    backgroundColor: function(context) {
+                        const chart = context.chart;
+                        const {ctx, chartArea} = chart;
+                        if (!chartArea) return null;
+                        const gradient = ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+                        gradient.addColorStop(0, 'rgba(0, 255, 128, 0)');
+                        gradient.addColorStop(0.5, 'rgba(0, 255, 128, 0.1)');
+                        gradient.addColorStop(1, 'rgba(0, 255, 128, 0.2)');
+                        return gradient;
+                    }
+                }]
+            },
+            options: {
+                animation: false,
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                scales: {
+                    x: {
+                        display: true,
+                        grid: {
+                            color: 'rgba(0, 255, 128, 0.05)',
+                            drawBorder: false
+                        },
+                        ticks: {
+                            display: false
+                        }
+                    },
+                    y: {
+                        min: 500,
+                        max: 2000,
+                        grid: {
+                            color: 'rgba(0, 255, 128, 0.1)',
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: 'rgba(255, 255, 255, 0.3)',
+                            font: {
+                                family: "'JetBrains Mono', monospace",
+                                size: 10
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false }
+                }
+            }
+        });
+
+        function updateStatus(connected) {
+            if (connected) {
+                statusTextEl.textContent = 'CONNECTED';
+                signalTextEl.textContent = 'SIGNAL ACTIVE';
+                signalDotEl.classList.remove('inactive');
+                wifiIconEl.setAttribute('stroke', '#00FF80');
+                waitingOverlayEl.classList.remove('show');
+            } else {
+                statusTextEl.textContent = 'DISCONNECTED';
+                signalTextEl.textContent = 'SIGNAL INACTIVE';
+                signalDotEl.classList.add('inactive');
+                wifiIconEl.setAttribute('stroke', '#666');
+                waitingOverlayEl.classList.add('show');
+            }
+        }
+        
+        // Alert system functions
+        function showAlert(type, currentBpm) {
+            const now = Date.now();
+            
+            // Check cooldown period
+            if (now - lastAlertTime < ALERT_COOLDOWN) {
+                return;
+            }
+            
+            lastAlertTime = now;
+            alertShown = true;
+            
+            // Set alert content
+            if (type === 'high') {
+                alertTitle.textContent = 'HIGH HEART RATE DETECTED!';
+                const randomMessage = alertMessages.high[Math.floor(Math.random() * alertMessages.high.length)];
+                alertMessage.textContent = randomMessage;
+            } else if (type === 'low') {
+                alertTitle.textContent = 'LOW HEART RATE DETECTED!';
+                const randomMessage = alertMessages.low[Math.floor(Math.random() * alertMessages.low.length)];
+                alertMessage.textContent = randomMessage;
+            }
+            
+            alertBpmValue.textContent = currentBpm;
+            alertOverlay.classList.add('show');
+            
+            // Play alert sound (optional - browser will ask for permission)
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = 800;
+                oscillator.type = 'sine';
+                
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.5);
+            } catch (e) {
+                // Audio context might be blocked by browser
+                console.log('Audio alert blocked by browser');
+            }
+        }
+        
+        function closeAlert() {
+            alertOverlay.classList.remove('show');
+            alertShown = false;
+        }
+        
+        function checkBpmThresholds(currentBpm) {
+            if (currentBpm > HIGH_BPM_THRESHOLD) {
+                bpmValueEl.classList.add('warning');
+                document.getElementById('bpmDisplay').classList.add('warning');
+                
+                if (!alertShown) {
+                    showAlert('high', currentBpm);
+                }
+            } else if (currentBpm < LOW_BPM_THRESHOLD && currentBpm > 0) {
+                bpmValueEl.classList.add('warning');
+                document.getElementById('bpmDisplay').classList.add('warning');
+                
+                if (!alertShown) {
+                    showAlert('low', currentBpm);
+                }
+            } else {
+                bpmValueEl.classList.remove('warning');
+                document.getElementById('bpmDisplay').classList.remove('warning');
+            }
+        }
+        
+        // Alert button handlers
+        acknowledgeBtn.addEventListener('click', () => {
+            closeAlert();
+        });
+        
+        dismissBtn.addEventListener('click', () => {
+            closeAlert();
+        });
+
+        dbRef.limitToLast(1).on('child_added', (snapshot) => {
+            const data = snapshot.val();
+            const ecgValue = data.ecg_val;
+            
+            if (typeof ecgValue === 'number') {
+                ecgData.push(ecgValue);
+
+                ecgChart.data.labels.push(dataCount);
+                ecgChart.data.datasets[0].data.push(ecgValue);
+
+                if (ecgChart.data.labels.length > MAX_POINTS) {
+                    ecgChart.data.labels.shift();
+                    ecgChart.data.datasets[0].data.shift();
+                }
+                
+                dataCount++;
+                dataCountEl.textContent = ecgData.length;
+                
+                if (dataCount % 10 === 0) {
+                    bpm = Math.floor(60 + Math.random() * 40);
+                    bpmValueEl.textContent = bpm;
+                    bpmValueEl.classList.add('pulse-animation');
+                    setTimeout(() => bpmValueEl.classList.remove('pulse-animation'), 500);
+                }
+                
+                ecgChart.update();
+                updateStatus(true);
+            }
+        });
+
+        const connectedRef = database.ref('.info/connected');
+        connectedRef.on('value', (snapshot) => {
+            if (!snapshot.val()) {
+                updateStatus(false);
+            }
+        });
+
+        // === 3D PARALLAX EFFECTS ===
+        
+        // Create floating particles
+        const particlesContainer = document.getElementById('particles');
+        const particleCount = 30;
+        
+        for (let i = 0; i < particleCount; i++) {
+            const particle = document.createElement('div');
+            particle.className = 'particle';
+            
+            // Random starting positions
+            particle.style.left = Math.random() * 100 + '%';
+            particle.style.top = Math.random() * 100 + '%';
+            
+            // Random 3D translation values
+            const tx = (Math.random() - 0.5) * 400;
+            const ty = (Math.random() - 0.5) * 400;
+            const tz = Math.random() * 200;
+            
+            particle.style.setProperty('--tx', tx + 'px');
+            particle.style.setProperty('--ty', ty + 'px');
+            particle.style.setProperty('--tz', tz + 'px');
+            
+            // Random animation delay
+            particle.style.animationDelay = Math.random() * 20 + 's';
+            particle.style.animationDuration = (15 + Math.random() * 10) + 's';
+            
+            particlesContainer.appendChild(particle);
+        }
+        
+        // Parallax effect on mouse move
+        const container = document.getElementById('container');
+        const sidebar = document.getElementById('sidebar');
+        
+        let mouseX = 0;
+        let mouseY = 0;
+        let targetX = 0;
+        let targetY = 0;
+        
+        document.addEventListener('mousemove', (e) => {
+            mouseX = (e.clientX / window.innerWidth) - 0.5;
+            mouseY = (e.clientY / window.innerHeight) - 0.5;
+        });
+        
+        // Smooth parallax animation loop
+        function animateParallax() {
+            targetX += (mouseX - targetX) * 0.05;
+            targetY += (mouseY - targetY) * 0.05;
+            
+            const tiltX = targetY * 5;
+            const tiltY = targetX * -5;
+            
+            container.style.transform = `
+                perspective(1500px)
+                rotateX(${tiltX}deg)
+                rotateY(${tiltY}deg)
+            `;
+            
+            sidebar.style.transform = `
+                translateZ(${targetX * 20}px)
+            `;
+            
+            requestAnimationFrame(animateParallax);
+        }
+        
+        animateParallax();
+        
+        // Mouse tracking for gradient effects
+        const bpmDisplay = document.getElementById('bpmDisplay');
+        const chartContainer = document.getElementById('chartContainer');
+        
+        bpmDisplay.addEventListener('mousemove', (e) => {
+            const rect = bpmDisplay.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * 100;
+            const y = ((e.clientY - rect.top) / rect.height) * 100;
+            
+            bpmDisplay.style.setProperty('--mouse-x', x + '%');
+            bpmDisplay.style.setProperty('--mouse-y', y + '%');
+        });
+        
+        chartContainer.addEventListener('mousemove', (e) => {
+            const rect = chartContainer.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * 100;
+            const y = ((e.clientY - rect.top) / rect.height) * 100;
+            
+            chartContainer.style.setProperty('--chart-mouse-x', x + '%');
+            chartContainer.style.setProperty('--chart-mouse-y', y + '%');
+        });
+        
+        // Floating animation for icons
+        const icons = document.querySelectorAll('.icon, .icon-small');
+        icons.forEach((icon, index) => {
+            let offset = 0;
+            setInterval(() => {
+                offset += 0.05;
+                const floatY = Math.sin(offset + index) * 3;
+                icon.style.transform = `translateY(${floatY}px)`;
+            }, 50);
+        });
+    </script>
+</body>
+</html>

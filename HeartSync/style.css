@@ -1,0 +1,30 @@
+.monitor-dashboard {
+    display: flex; /* Enables flexible layout */
+    max-width: 1200px;
+    margin: 40px auto;
+}
+
+.data-metrics {
+    width: 25%; /* Sidebar takes 25% of space */
+    padding: 20px;
+}
+
+.metric-box {
+    background-color: #2D2D2D;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 5px;
+}
+
+#bpm-display {
+    font-size: 3em; /* Large, easy-to-read number */
+    color: #00FF80; /* Electric green accent */
+    font-weight: bold;
+}
+
+.chart-container {
+    flex-grow: 1; /* Chart takes the remaining 75% space */
+    background-color: #1E1E1E;
+    padding: 10px;
+    border-radius: 8px;
+}
